@@ -1,2 +1,2 @@
 # Painting-GAN
-Hopefully this will become something, with time and dedication.
+Hopefully this will become something, with some luck.
