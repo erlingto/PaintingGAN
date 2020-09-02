@@ -21,27 +21,37 @@ class DiscriminatorNet(nn.Module):
     def __init__(self, img_rows, img_cols, channels):
         super(DiscriminatorNet, self).__init__()
 
-        self.conv1 = nn.Conv2d(in_channels = 3,out_channels = 1, kernel_size = 3, stride= 1, padding= 1)
-        self.pool1 = nn.MaxPool2d(2,2, padding= 0)
-        self.conv_output_H = calculate_conv_output(img_rows, 2, 0, 2)
-        self.conv_output_W = calculate_conv_output(img_cols, 2, 0, 2)
-
-        self.fc1 = torch.nn.Linear(calculate_flat_input(1, self.conv_output_H, self.conv_output_W),  128)
-        self.fc2 = torch.nn.Linear(128, 1)
-
+        self.conv1 = nn.Conv2d(in_channels = 3,out_channels = 6, kernel_size = 3, stride= 2, padding= 1)
+        self.pool1 = nn.MaxPool2d(3,2, padding= 1)
+        self.conv2 = nn.Conv2d(in_channels = 6,out_channels = 12, kernel_size = 3, stride= 2, padding= 1)
+        self.pool2 = nn.MaxPool2d(3,2, padding= 1)
+        self.conv3 = nn.Conv2d(in_channels = 12,out_channels = 24, kernel_size = 3, stride= 2, padding= 1)
+        self.pool3 = nn.MaxPool2d(3,2, padding= 1)
+        self.conv_output_H = calculate_conv_output(img_rows, 3, 1, 2)
+        self.conv_output_W = calculate_conv_output(img_cols, 3, 1, 2)
+        
+        for _ in range(5):
+            self.conv_output_H = calculate_conv_output(self.conv_output_H , 3, 1, 2)
+            self.conv_output_W = calculate_conv_output(self.conv_output_W , 3, 1, 2)
+        self.fc1 = torch.nn.Linear(calculate_flat_input(1, self.conv_output_H, self.conv_output_W)*24,  512)
+        self.fc2 = torch.nn.Linear(512, 1)
+        
 
     def forward(self, x):
         x = F.relu(self.conv1(x.float()))
         x=self.pool1(x)
-        x = x.view(-1, calculate_flat_input(1, self.conv_output_H, self.conv_output_W))
-
+        x = F.relu(self.conv2(x.float()))
+        x=self.pool2(x)
+        x = F.relu(self.conv3(x.float()))
+        x=self.pool3(x)
+        x = x.view(-1, calculate_flat_input(1, self.conv_output_H, self.conv_output_W)*24)
         x= F.relu(self.fc1(x))
         x= self.fc2(x)
         return x
 
 class Discriminator:
     def __init__(self, learning_rate):
-        self.model = DiscriminatorNet(64, 128, 3)
+        self.model = DiscriminatorNet(256, 256, 3)
         self.images = ["drawing", "iconography", "painting", "sculpture"]
         drawing =  glob.glob("/Users/Erling/Documents/PaintingGAN/drawings/*")
         sculpture =  glob.glob("/Users/Erling/Documents/PaintingGAN/sculpture/*")
@@ -72,8 +82,33 @@ class Discriminator:
     def predict(self, image):
         return self.model(image)
 
+    def load_weights(self, path):
+        self.model.load_state_dict(torch.load(path))
+        self.name = path
+    def save_weights(self, path):
+        torch.save(self.model.state_dict(), path)
+
+    def predict(self, imagePath):
+        size= 256, 256
+        im = Image.open(imagePath)
+        im.thumbnail(size, Image.ANTIALIAS)
+        im = np.array(im)
+        im = cv2.resize(im, (256, 256)) 
+        im = torch.from_numpy(im)
+        im = im.transpose(0,-1)
+        im = im[None, :, :]
+
+        output = self.model(im)
+        predicted = torch.round(output.data[0])
+        if predicted == 1:
+            print("Bildet er et maleri")
+        else:
+            print("Bildet er ikke et maleri")
+        print(output)
+
+
     def load_images(self):
-        size= 128, 64
+        size= 256, 256
         counter = 0
         for i in range(100):
             group = random.choice(self.images)
@@ -87,12 +122,12 @@ class Discriminator:
             im = Image.open(imagePath)
             im.thumbnail(size, Image.ANTIALIAS)
             im = np.array(im)
-            im = cv2.resize(im, (64, 128)) 
+            im = cv2.resize(im, (256, 256)) 
             im = torch.from_numpy(im)
             im = im.transpose(0,-1)
             im = im[None, :, :]
 
-            while im.size() != torch.Size([1, 3, 64, 128]):
+            while im.size() != torch.Size([1, 3, 256, 256]):
                 imagePath = np.random.choice(self.list_of_paths[group])
                 # load the image, pre-process it, and store it in the data list
                 im = Image.open(imagePath)
@@ -124,7 +159,7 @@ class Discriminator:
                 number_of_paintings = 0
                 for i in range(batch_size):
                     # Run the forward pass
-                    if self.batch_images[str(i)].size() != torch.Size([1, 3, 64, 128]):
+                    if self.batch_images[str(i)].size() != torch.Size([1, 3, 256, 256]):
                         print(self.batch_path[str(i)])
                     output = self.model(self.batch_images[str(i)])
                     
@@ -148,21 +183,29 @@ class Discriminator:
                         correct+= 1
                     acc_list.append(correct / total)
 
-                    if (i + 1) % 100 == 0:
+                if (i + 1) % 100 == 0:
                         print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}, Accuracy: {:.2f}%'
-                                .format(epoch + 1, number_of_epochs, i , i+1, loss.item(),
+                                .format(epoch + 1, number_of_epochs, b , number_of_batches, loss.item(),
                                         (correct / total) * 100))
                         print(number_of_paintings)
                 self.reset_batches()
                 self.load_images()
             self.reset_epoch()
 
+        self.save_weights("discriminator")
+
+
+
+def Mona_Lisa_Testen(Discriminator):
+    image = "Mona_LisaTesten.jpg"
+    print(Discriminator.predict(image))
+    
 
 DClassifier = Discriminator(0.000146)
 DClassifier.load_images()
-DClassifier.train(20, 40)
+DClassifier.train(20, 4)
 
-
+Mona_Lisa_Testen(DClassifier)
 
 #DClassifier.load_images()
 
