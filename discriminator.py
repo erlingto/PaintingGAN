@@ -34,7 +34,7 @@ class DiscriminatorNet(nn.Module):
             self.conv_output_H = calculate_conv_output(self.conv_output_H , 3, 1, 2)
             self.conv_output_W = calculate_conv_output(self.conv_output_W , 3, 1, 2)
         self.fc1 = torch.nn.Linear(calculate_flat_input(1, self.conv_output_H, self.conv_output_W)*24,  512)
-        self.fc2 = torch.nn.Linear(512, 1)
+        self.fc2 = torch.nn.Linear(512, 4)
         
 
     def forward(self, x):
@@ -52,16 +52,16 @@ class DiscriminatorNet(nn.Module):
 class Discriminator:
     def __init__(self, learning_rate):
         self.model = DiscriminatorNet(256, 256, 3)
-        self.images = ["drawing", "iconography", "painting", "sculpture"]
-        drawing =  glob.glob("/Users/Erling/Documents/PaintingGAN/drawings/*")
-        sculpture =  glob.glob("/Users/Erling/Documents/PaintingGAN/sculpture/*")
-        painting =  glob.glob("/Users/Erling/Documents/PaintingGAN/painting/*")
-        iconography =  glob.glob("/Users/Erling/Documents/PaintingGAN/iconography/*")
+        #self.images = ["drawing", "iconography", "painting", "sculpture"]
+        alfred =  glob.glob("/Users/Erling/Documents/PaintingGAN/Painters/Alfred_Sisley/*")
+        leonardo =  glob.glob("/Users/Erling/Documents/PaintingGAN/Painters/Leonardo_da_Vinci/*")
+        pablo =  glob.glob("/Users/Erling/Documents/PaintingGAN/Painters/Pablo_Picasso/*")
+        rembrandt =  glob.glob("/Users/Erling/Documents/PaintingGAN/Painters/Rembrandt/*")
 
         self.optimizer = optim.Adam(self.model.parameters() ,lr = learning_rate)
         self.criterion = nn.MSELoss()
 
-        self.list_of_paths = {"drawing": drawing, "sculpture": sculpture, "painting": painting, "iconography": iconography}
+        self.list_of_paths = {"alfred": alfred, "leonard": leonardo, "pablo": pablo, "rembrandt": rembrandt}
         self.batch_images = {}
         self.batch_labels = {}
         self.batch_path = {}
@@ -72,12 +72,12 @@ class Discriminator:
         self.batch_path = {}
 
     def reset_epoch(self): 
-        drawing =  glob.glob("/Users/Erling/Documents/PaintingGAN/drawings/*")
-        sculpture =  glob.glob("/Users/Erling/Documents/PaintingGAN/sculpture/*")
-        painting =  glob.glob("/Users/Erling/Documents/PaintingGAN/painting/*")
-        iconography =  glob.glob("/Users/Erling/Documents/PaintingGAN/iconography/*")
+        alfred =  glob.glob("/Users/Erling/Documents/PaintingGAN/Painters/Alfred_Sisley/*")
+        leonardo =  glob.glob("/Users/Erling/Documents/PaintingGAN/Painters/Leonardo_da_Vinci/*")
+        pablo =  glob.glob("/Users/Erling/Documents/PaintingGAN/Painters/Pablo_Picasso/*")
+        rembrandt =  glob.glob("/Users/Erling/Documents/PaintingGAN/Painters/Rembrandt/*")
 
-        self.list_of_paths = {"drawing": drawing, "sculpture": sculpture, "painting": painting, "iconography": iconography}
+        self.list_of_paths = {"alfred": alfred, "leonard": leonardo, "pablo": pablo, "rembrandt": rembrandt}
 
     def predict(self, image):
         return self.model(image)
@@ -88,7 +88,7 @@ class Discriminator:
     def save_weights(self, path):
         torch.save(self.model.state_dict(), path)
 
-    def predict(self, imagePath):
+    def predict_test(self, imagePath):
         size= 256, 256
         im = Image.open(imagePath)
         im.thumbnail(size, Image.ANTIALIAS)
@@ -100,10 +100,14 @@ class Discriminator:
 
         output = self.model(im)
         predicted = torch.round(output.data[0])
-        if predicted == 1:
-            print("Bildet er et maleri")
-        else:
-            print("Bildet er ikke et maleri")
+        if np.argmax(predicted) == 0:
+            print("Bildet er en alfred")
+        elif np.argmax(predicted) == 1:
+            print("Bildet er en leo")
+        elif np.argmax(predicted) == 2:
+            print("Bildet er en pablo")
+        elif np.argmax(predicted) == 3:
+            print("Bildet er en Rembrand")
         print(output)
 
 
@@ -133,15 +137,22 @@ class Discriminator:
                 im = Image.open(imagePath)
                 im.thumbnail(size, Image.ANTIALIAS)
                 im = np.array(im)
-                im = cv2.resize(im, (64, 128)) 
+                im = cv2.resize(im, (256, 256)) 
                 im = torch.from_numpy(im)
                 im = im.transpose(0,-1)
                 im = im[None, :, :]
 
+            label = np.zeros(4)
+
             if group == "painting":
-                label = 1
-            else:
-                label = 0
+                label[0] = 1
+            elif group == "iconography":
+                label[1] = 1
+            elif group == "sculpture":
+                label[2] = 1
+            elif group == "drawing":
+                label[3] = 1
+
 
             self.batch_images.update({str(counter): im})
             self.batch_labels.update({str(counter): label})
@@ -164,10 +175,9 @@ class Discriminator:
                     output = self.model(self.batch_images[str(i)])
                     
                     label = self.batch_labels[str(i)]
-                    if label == 1:
+                    if label[0] == 1:
                         number_of_paintings += 1
                     label = torch.Tensor([label])
-                    label = label[None, :]
                     loss = self.criterion(output, label)
                     loss_list.append(loss.item())
 
@@ -179,7 +189,7 @@ class Discriminator:
                     # Track the accuracy
                     total = 100
                     predicted = torch.round(output.data[0])
-                    if predicted == label:
+                    if np.argmax(predicted) == np.argmax(label):
                         correct+= 1
                     acc_list.append(correct / total)
 
@@ -198,12 +208,12 @@ class Discriminator:
 
 def Mona_Lisa_Testen(Discriminator):
     image = "Mona_LisaTesten.jpg"
-    print(Discriminator.predict(image))
+    print(Discriminator.predict_test(image))
     
 
-DClassifier = Discriminator(0.000146)
+DClassifier = Discriminator(0.000046)
 DClassifier.load_images()
-DClassifier.train(20, 4)
+DClassifier.train(20, 12)
 
 Mona_Lisa_Testen(DClassifier)
 
